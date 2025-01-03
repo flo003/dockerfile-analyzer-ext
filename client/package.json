@@ -1,0 +1,19 @@
+{
+  "name": "dockerfile-analyzer-ext-client",
+  "description": "VSCode part of a language server",
+  "author": "Florian Brunner",
+  "license": "MIT",
+  "publisher": "at.brunner",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "dependencies": {
+    "glob": "^11.0.0",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.1",
+    "@vscode/test-electron": "^2.3.9"
+  }
+}
