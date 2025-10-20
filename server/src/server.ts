@@ -6,18 +6,19 @@ import {
   InitializeParams,
   DidChangeConfigurationNotification,
   CompletionItem,
-  CompletionItemKind,
   TextDocumentPositionParams,
   TextDocumentSyncKind,
   InitializeResult,
   DocumentDiagnosticReportKind,
   type DocumentDiagnosticReport,
+  CodeAction,
+  CodeActionParams,
 } from "vscode-languageserver/node";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { DockerfileParser } from "dockerfile-ast";
-import { getValidators } from "./dockerfileValidations";
-import { getDockerfileDocuments } from "./dockerfileDocument";
+import { getValidators } from "./validation/dockerfileValidations";
+import { getDockerfileDocuments } from "./document/dockerfileDocument";
+import { DockerHubImageTagService } from './document/dockerHubImageTagService';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -25,7 +26,7 @@ const connection = createConnection(ProposedFeatures.all);
 
 // Create a simple text document manager.
 const documents = new TextDocuments(TextDocument);
-const dockerfilesDocuments = getDockerfileDocuments();
+const dockerfilesDocuments = getDockerfileDocuments(new DockerHubImageTagService());
 
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
@@ -65,6 +66,7 @@ connection.onInitialize((params: InitializeParams) => {
         interFileDependencies: false,
         workspaceDiagnostics: false,
       },
+      codeActionProvider: true, // add suggest fix for diagnostic problems
     },
   };
   if (hasWorkspaceFolderCapability) {
@@ -94,13 +96,15 @@ connection.onInitialized(() => {
 
 // The example settings
 interface AnalyzerSettings {
-  maxNumberOfProblems: number;
+  warningImageOlderThanNumberOfDays: number;
 }
 
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example
 // but could happen with other clients.
-const defaultSettings: AnalyzerSettings = { maxNumberOfProblems: 1000 };
+const defaultSettings: AnalyzerSettings = {
+  warningImageOlderThanNumberOfDays: 90,
+};
 let globalSettings: AnalyzerSettings = defaultSettings;
 
 // Cache the settings of all open documents
@@ -166,38 +170,35 @@ documents.onDidChangeContent((change) => {
 async function validateTextDocument(
   textDocument: TextDocument
 ): Promise<Diagnostic[]> {
-  // In this simple example we get the settings for every validate run.
   const settings = await getDocumentSettings(textDocument.uri);
+
+  const warningImageOlderThanNumberOfDays =
+    settings.warningImageOlderThanNumberOfDays ??
+    defaultSettings.warningImageOlderThanNumberOfDays;
 
   const dockerfileDoc = await dockerfilesDocuments.getDocument(textDocument);
 
-  const validatorService = getValidators();
+  const validatorService = getValidators(dockerfileDoc, {
+    warningImageOlderThanNumberOfDays: warningImageOlderThanNumberOfDays,
+  });
 
-  // The validator creates diagnostics for all uppercase words length 2 and more
-
-  //console.log(dockerfile);
-
-  //const pattern = /\b[A-Z]{2,}\b/g;
-  //let m: RegExpExecArray | null;
-
-  //const problems = 0;
   let diagnostics: Diagnostic[] = [];
 
-  const diagnosticFroms = await validatorService.validateFromVersions(
-    dockerfileDoc.dockerfile.getFROMs(),
-    dockerfileDoc.textDocument,
-    dockerfileDoc
-  );
-  diagnostics = diagnostics.concat(diagnosticFroms);
-
-  const diagnosticMaintainer = await validatorService.validateMaintainer(
-    dockerfileDoc.dockerfile.getInstructions(),
-    dockerfileDoc.textDocument,
-    dockerfileDoc
-  );
-  diagnostics = diagnostics.concat(diagnosticMaintainer);
+  diagnostics = diagnostics
+    .concat(await validatorService.validateFromVersions())
+    .concat(await validatorService.validateMaintainer())
+    .concat(await validatorService.validateAddInsteadOfCopy())
+    .concat(await validatorService.validateCopyInsteadOfAdd())
+    .concat(await validatorService.validateCopyRun())
+    .concat(await validatorService.validateRUNs());
 
   return diagnostics;
+}
+
+async function processCodeAction(params: CodeActionParams) {
+  const codeActions: CodeAction[] = [];
+  const settings = await getDocumentSettings(params.textDocument.uri);
+  return codeActions;
 }
 
 connection.onDidChangeWatchedFiles((_change) => {
@@ -211,32 +212,18 @@ connection.onCompletion(
     // The pass parameter contains the position of the text document in
     // which code complete got requested. For the example we ignore this
     // info and always provide the same completion items.
-    return [
-      {
-        label: "TypeScript",
-        kind: CompletionItemKind.Text,
-        data: 1,
-      },
-      {
-        label: "JavaScript",
-        kind: CompletionItemKind.Text,
-        data: 2,
-      },
-    ];
+    return [];
   }
 );
 
 // This handler resolves additional information for the item selected in
 // the completion list.
 connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
-  if (item.data === 1) {
-    item.detail = "TypeScript details";
-    item.documentation = "TypeScript documentation";
-  } else if (item.data === 2) {
-    item.detail = "JavaScript details";
-    item.documentation = "JavaScript documentation";
-  }
   return item;
+});
+
+connection.onCodeAction((params: CodeActionParams): Thenable<CodeAction[]> => {
+  return processCodeAction(params);
 });
 
 // Make the text document manager listen on the connection

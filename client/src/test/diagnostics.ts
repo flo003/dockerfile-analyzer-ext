@@ -17,13 +17,54 @@ export class DiagnosticsTestHelper {
 
     const actualDiagnostics = vscode.languages.getDiagnostics(docUri);
 
-    assert.equal(actualDiagnostics.length, expectedDiagnostics.length);
+    assert.strictEqual(
+      actualDiagnostics.length,
+      expectedDiagnostics.length,
+      "Actual and exptected Diagnostics are not the same amount"
+    );
 
     expectedDiagnostics.forEach((expectedDiagnostic, i) => {
       const actualDiagnostic = actualDiagnostics[i];
-      assert.equal(actualDiagnostic.message, expectedDiagnostic.message);
-      assert.deepEqual(actualDiagnostic.range, expectedDiagnostic.range);
-      assert.equal(actualDiagnostic.severity, expectedDiagnostic.severity);
+      assert.strictEqual(actualDiagnostic.message, expectedDiagnostic.message);
+      assert.deepStrictEqual(actualDiagnostic.range, expectedDiagnostic.range);
+      assert.strictEqual(
+        actualDiagnostic.severity,
+        expectedDiagnostic.severity
+      );
+    });
+  }
+
+  async testDiagnosticsAtLeastExpected(
+    docUri: vscode.Uri,
+    expectedDiagnostics: vscode.Diagnostic[]
+  ) {
+    await activate(docUri);
+
+    const actualDiagnostics = vscode.languages.getDiagnostics(docUri);
+
+    assert.strictEqual(
+      actualDiagnostics.length >= expectedDiagnostics.length,
+      true,
+      `amount of diagnostics found  ${actualDiagnostics.length} >= amount of expected diagnostics ${expectedDiagnostics.length}`
+    );
+
+    expectedDiagnostics.forEach((expectedDiagnostic) => {
+      const actualDiagnostic = actualDiagnostics.find(
+        (actualDiagnostic) =>
+          actualDiagnostic.message === expectedDiagnostic.message
+      );
+      assert.ok(
+        actualDiagnostic,
+        `Diagnostic '${expectedDiagnostic.message}' has not be found`
+      );
+      assert.strictEqual(actualDiagnostic.message, expectedDiagnostic.message);
+      assert.deepStrictEqual(actualDiagnostic.range, expectedDiagnostic.range);
+      assert.strictEqual(
+        actualDiagnostic.severity,
+        expectedDiagnostic.severity
+      );
     });
   }
 }
+
+export const DiagnosticSource = 'dockerfiles-analyzer';
